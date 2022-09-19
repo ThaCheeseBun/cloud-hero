@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::Cursor;
 use md5;
+use walkdir::WalkDir;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -212,7 +213,7 @@ fn write_cache(list: Vec<SongEntry>, f: &mut File) {
         let len = lists[i].len();
         f.write_i32::<LittleEndian>(len as i32).unwrap();
         for j in 0..len {
-            write_string(lists[i][j].clone(), f);
+            write_string(format!("{} hej", lists[i][j].clone()), f);
         }
     }
 
@@ -259,15 +260,29 @@ fn write_cache(list: Vec<SongEntry>, f: &mut File) {
     }
 }
 
+// recursively scan and create list from folders
+fn scan_folder() {
+    for entry in WalkDir::new("/home/chez/Clone Hero/Songs") {
+        let entry = entry.unwrap();
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        println!("{:?}", path);
+    }
+}
+
 fn main() {
     println!("Hello, world!");
 
-    let mut f = File::open("stuff/songcache.bin").unwrap();
+    scan_folder();
+
+    /*let mut f = File::open("stuff/songcache.bin").unwrap();
     let out = parse_cache(&mut f);
 
     //println!("{:?}", out.len());
     //println!("{:#?}", out[0]);
 
     let mut f2 = File::create("stuff/songcache2.bin").unwrap();
-    write_cache(out, &mut f2);
+    write_cache(out, &mut f2);*/
 }
