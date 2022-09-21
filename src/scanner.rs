@@ -1,85 +1,103 @@
-use std::{path::{PathBuf, Path}, ffi::{OsStr, OsString}, fs};
+use crate::{util, songentry::SongEntry};
 use configparser::ini::Ini;
+use std::{
+    ffi::{OsStr, OsString},
+    fs,
+    path::{Path, PathBuf}
+};
 use walkdir::WalkDir;
-use crate::util;
 
 const VIDEO_EXTS: [&str; 6] = [".mp4", ".avi", ".webm", ".vp8", ".ogv", ".mpeg"];
 
-fn ini_get_int(c: &Ini, s: &str, k: &str, d: Option<i64>) -> Option<i64> {
+fn ini_get_int(c: &Ini, s: &str, k: &str) -> Option<i64> {
     let raw = c.get(s, k);
     if raw.is_none() {
-        return d;
+        return None;
     }
     let parsed = raw.unwrap().parse::<i64>();
     if parsed.is_err() {
-        return d;
+        return None;
     }
     Some(parsed.unwrap())
 }
 
-fn ini_get_bool(c: &Ini, s: &str, k: &str, d: Option<bool>) -> Option<bool> {
+fn ini_get_bool(c: &Ini, s: &str, k: &str) -> Option<bool> {
     let raw = c.get(s, k);
     if raw.is_none() {
-        return d;
+        return None;
     }
     match raw.unwrap().to_lowercase().as_str() {
         "true" | "yes" | "t" | "y" | "1" | "on" => Some(true),
         "false" | "no" | "f" | "n" | "0" | "off" => Some(false),
-        _ => d,
+        _ => None,
     }
 }
 
-fn read_ini(p: PathBuf) -> bool {
+fn read_ini(song: &mut SongEntry, p: PathBuf) -> bool {
     let mut flag = false;
 
     let raw_text = util::string_from_file(&p);
     let mut config = Ini::new();
-    let i_maybe = config.read(raw_text);
+    let i = config.read(raw_text);
 
-    if i_maybe.is_err() {
-        println!("{}", i_maybe.err().unwrap());
+    if i.is_err() {
+        println!("{}", i.err().unwrap());
         println!("VERYBAD: {:?}", p);
-        return false;
+        return flag;
     }
 
     if config.sections().contains(&String::from("song")) {
-        /*SongEntry.metadataCache[0] = iniparser.ReadValue("song", "name", "");
-        SongEntry.metadataCache[1] = iniparser.ReadValue("song", "artist", "");
-        SongEntry.metadataCache[2] = iniparser.ReadValue("song", "album", "");
-        SongEntry.metadataCache[3] = iniparser.ReadValue("song", "genre", "");
-        SongEntry.metadataCache[4] = iniparser.ReadValue("song", "year", "");*/
-        let mut intensities = [0i8; 10];
-        intensities[8] = ini_get_int(&config, "song", "diff_band", Some(-1)).unwrap() as i8;
-        intensities[0] = ini_get_int(&config, "song", "diff_guitar", Some(-1)).unwrap() as i8;
-        intensities[2] = ini_get_int(&config, "song", "diff_rhythm", Some(-1)).unwrap() as i8;
-        intensities[1] = ini_get_int(&config, "song", "diff_bass", Some(-1)).unwrap() as i8;
-        intensities[6] = ini_get_int(&config, "song", "diff_drums", Some(-1)).unwrap() as i8;
-        intensities[9] = ini_get_int(&config, "song", "diff_drums_real", Some(-1)).unwrap() as i8;
-        intensities[7] = ini_get_int(&config, "song", "diff_keys", Some(-1)).unwrap() as i8;
-        intensities[4] = ini_get_int(&config, "song", "diff_guitarghl", Some(-1)).unwrap() as i8;
-        intensities[5] = ini_get_int(&config, "song", "diff_bassghl", Some(-1)).unwrap() as i8;
+        song.metadata[0] = config.get("song", "name").unwrap_or(String::from(""));
+        song.metadata[1] = config.get("song", "artist").unwrap_or(String::from(""));
+        song.metadata[2] = config.get("song", "album").unwrap_or(String::from(""));
+        song.metadata[3] = config.get("song", "genre").unwrap_or(String::from(""));
+        song.metadata[4] = config.get("song", "year").unwrap_or(String::from(""));
 
-        // 10 / 10 error handling right here
-        // i really need to make this better
+        song.intensities[8] = ini_get_int(&config, "song", "diff_band").unwrap_or(-1) as i8;
+        song.intensities[0] = ini_get_int(&config, "song", "diff_guitar").unwrap_or(-1) as i8;
+        song.intensities[2] = ini_get_int(&config, "song", "diff_rhythm").unwrap_or(-1) as i8;
+        song.intensities[1] = ini_get_int(&config, "song", "diff_bass").unwrap_or(-1) as i8;
+        song.intensities[6] = ini_get_int(&config, "song", "diff_drums").unwrap_or(-1) as i8;
+        song.intensities[9] = ini_get_int(&config, "song", "diff_drums_real").unwrap_or(-1) as i8;
+        song.intensities[7] = ini_get_int(&config, "song", "diff_keys").unwrap_or(-1) as i8;
+        song.intensities[4] = ini_get_int(&config, "song", "diff_guitarghl").unwrap_or(-1) as i8;
+        song.intensities[5] = ini_get_int(&config, "song", "diff_bassghl").unwrap_or(-1) as i8;
 
-        //ini_get_int(sec, "track", Some(16000)).unwrap() as i16;
-        //ini_get_bool(sec, "five_lane_drums", Some(false)).unwrap();
+        song.preview_start = ini_get_int(&config, "song", "preview_start_time").unwrap_or(-1) as i32;
+        song.icon_name = config
+            .get("song", "icon")
+            .unwrap_or(String::from(""))
+            .to_lowercase();
+        song.playlist_track = ini_get_int(&config, "song", "playlist_track").unwrap_or(16000) as i16;
+        song.modchart = ini_get_bool(&config, "song", "modchart").unwrap_or(false);
+        song.song_length = ini_get_int(&config, "song", "song_length").unwrap_or(0) as i32;
+        song.force_pro_drums = ini_get_bool(&config, "song", "pro_drums").unwrap_or(false);
+        song.force_five_lane = ini_get_bool(&config, "song", "five_lane_drums").unwrap_or(false);
+        song.top_level_playlist = config
+            .get("song", "playlist")
+            .unwrap_or(String::from(""))
+            .to_lowercase();
+        song.sub_playlist = config
+            .get("song", "sub_playlist")
+            .unwrap_or(String::from(""))
+            .to_lowercase();
 
-        let preview_start = ini_get_int(&config, "song", "preview_start_time", Some(-1)).unwrap() as i32;
-        let icon_name = config.get("song", "icon").unwrap_or(String::from("")).to_lowercase();
-        let playlist_track = ini_get_int(&config, "song", "playlist_track", Some(16000)).unwrap() as i16;
-        let modchart = ini_get_bool(&config, "song", "modchart", Some(false)).unwrap();
-        let song_length = ini_get_int(&config, "song", "song_length", Some(0)).unwrap() as i32;
-        let force_pro_drums = ini_get_bool(&config, "song", "pro_drums", Some(false)).unwrap();
-        let force_five_lane = ini_get_bool(&config, "song", "five_lane_drums", Some(false)).unwrap();
-        let top_level_playlist = config.get("song", "playlist").unwrap_or(String::from("")).to_lowercase();
-        let sub_playlist = config.get("song", "sub_playlist").unwrap_or(String::from("")).to_lowercase();
-        if config.get("song", "album_track").is_some() {
-            let album_track = ini_get_int(&config, "song", "album_track", Some(16000)).unwrap() as i16;
-        } else {
-            let album_track = ini_get_int(&config, "song", "track", Some(16000)).unwrap() as i16;
-        }
-        //SongEntry.metadataCache[5] = iniparser.ReadValue("song", iniparser.IsKeyExists("song", "charter") ? "charter" : "frets", "");
+        song.album_track = ini_get_int(&config, "song", {
+            if config.get("song", "album_track").is_some() {
+                "album_track"
+            } else {
+                "track"
+            }
+        }).unwrap_or(16000) as i16;
+        
+        song.metadata[5] = config.get("song", {
+            if config.get("song", "charter").is_some() {
+                "charter"
+            } else {
+                "frets"
+            }
+        }).unwrap_or(String::from(""));
+
         flag = true;
     } else {
         flag = false;
@@ -88,127 +106,149 @@ fn read_ini(p: PathBuf) -> bool {
     flag
 }
 
-fn create_song_entry(p: &Path) -> bool {
-    let is_enc = !p.is_dir() && p.extension().unwrap().to_string_lossy().to_lowercase() == "sng";
-    let intensities: [i8; 10] = [0; 10]; // sbyte[10]
-                                         //Array.Clear(SongEntry.metadataCache, 0, SongEntry.metadataCache.Length);
-    let text = p.join("song.ini");
-    let text2 = p.join("notes.chart");
-    let folder_path = p;
-    /*if is_enc {
-        this.method_5();
-        return;
-    }*/
-    let mut bool = false;
-    if !read_ini(text) {
-        println!("no: {:?}", p);
-        /*if this.method_19(text2) {
-            this.metadataLoaded = true;
-            return;
-        }*/
-    } else {
-        //println!("yes: {:?}", p);
-        bool = true;
-        //this.metadataLoaded = true;
+fn read_chart(song: &mut SongEntry, p: PathBuf) -> bool {
+    let raw_text = util::string_from_file(&p);
+
+    for line in raw_text.lines() {
+        let line = line.trim();
+        if line == "}" {
+            break;
+        }
+
+        let arr_maybe = line.split_once('=');
+        if arr_maybe.is_none() {
+            continue;
+        }
+        let arr = arr_maybe.unwrap();
+
+        let key = arr.0.to_lowercase();
+        let val = arr.1.replace("\"", "").trim().to_string();
+
+        match key.trim() {
+            "charter" => song.metadata[5] = val,
+            "artist" => song.metadata[1] = val,
+            //"offset" => song
+            "genre" => song.metadata[3] = val,
+            "album" => song.metadata[2] = val,
+            "year" => song.metadata[4] = val.replace(", ", ""),
+            "name" => {
+                if key.trim() == "TEMPO TRACK" || key.trim() == "" || key.trim() == "midi_export" {
+                    return false;
+                }
+                song.metadata[0] = val;
+            },
+            _ => {}
+        }
     }
-    bool
+
+    return song.metadata[0] != ""
 }
 
-pub fn scan_folder() {
+fn create_song_entry(p: &Path) -> Option<SongEntry> {
+    let mut song = SongEntry::default();
+
+    let ini_path = p.join("song.ini");
+    let chart_path = p.join("notes.chart");
+
+    song.folder_path = p.to_string_lossy().to_string();
+
+    if !read_ini(&mut song, ini_path) {
+        if read_chart(&mut song, chart_path) {
+            return Some(song);
+        }
+    } else {
+        return Some(song);
+    }
+
+    None
+}
+
+pub fn scan_folder() -> Vec<SongEntry> {
     let mut aaaa = 0;
+    let mut songs = vec![];
 
     for entry in WalkDir::new("E:\\Spel\\Annat\\Clone Hero\\Songs") {
         let entry = entry.unwrap();
-        if entry.path().extension() != None
-            && entry.path().extension().unwrap() == OsStr::new("sng")
-        {
+
+        if entry.path().extension().unwrap_or(&OsStr::new("")) == OsStr::new("sng") {
             // todo
         } else if entry.file_type().is_dir() {
-            let mut flag = false;
-            let mut flag2 = false;
-            let mut flag3 = false;
-            let mut flag4 = false;
-            let mut text2: Option<OsString> = None;
+            let mut mid_flag = false;
+            let mut chart_flag = false;
+            let mut ini_flag = false;
+            let mut video_flag = false;
+            let mut chart_name: Option<OsString> = None;
 
             for file in fs::read_dir(entry.path()).unwrap() {
-                let file_entry = file.unwrap();
-                let file_name = file_entry
+                let file = file.unwrap();
+                let name = file
                     .path()
                     .file_stem()
-                    .unwrap()
+                    .unwrap_or(&OsStr::new(""))
                     .to_string_lossy()
                     .to_lowercase();
-                let extension = file_entry
+                let extension = file
                     .path()
                     .extension()
-                    .or(Some(&OsStr::new("")))
-                    .unwrap()
+                    .unwrap_or(&OsStr::new(""))
                     .to_string_lossy()
                     .to_lowercase();
-                if file_name == "notes" {
+                if name == "notes" {
                     if extension == "mid" {
-                        flag = true;
-                        text2 = Some(file_entry.file_name());
+                        mid_flag = true;
+                        chart_name = Some(file.file_name());
                     } else if extension == "chart" {
-                        flag2 = true;
-                        text2 = Some(file_entry.file_name());
+                        chart_flag = true;
+                        chart_name = Some(file.file_name());
                     }
-                } else if file_name == "song" && extension == "ini" {
-                    flag3 = true;
-                } else if file_name == "video" && VIDEO_EXTS.contains(&&extension[..]) {
-                    if extension != ".webm" && extension != ".vp8" && extension != ".ogv" {
-                        //this.list_3.Add(text);
-                    }
-                    flag4 = true;
+                } else if name == "song" && extension == "ini" {
+                    ini_flag = true;
+                } else if name == "video"/* && VIDEO_EXTS.contains(&&extension[..])*/ {
+                    video_flag = true;
                 }
             }
 
-            if !(!flag && !flag2) || flag3 {
-                if create_song_entry(entry.path()) {
-                    aaaa += 1;
+            if !(!mid_flag && !chart_flag) || ini_flag {
+                let song = create_song_entry(entry.path());
+
+                if song.is_some() {
+                    aaaa = aaaa + 1;
                 }
 
-                /*let songEntry2 = SongEntry {
+                if song.is_none() {
+                    continue;
+                }
+                let mut song = song.unwrap();
 
+                let num = {
+                    if mid_flag {
+                        2
+                    } else {
+                        if chart_flag {
+                            1
+                        } else {
+                            0
+                        }
+                    }
                 };
-                if (!songEntry2.HasValidName)
-                {
-                    this.list_10.Add(text);
-                }
-                else
-                {
-                    int num = (flag ? 2 : (flag2 ? 1 : 0));
-                    songEntry2.videoBackground = flag4;
-                    songEntry2.chartName = text2;
-                    if (songEntry2.metadataLoaded)
+
+                song.video_background = video_flag;
+                song.chart_name = chart_name.unwrap().to_string_lossy().to_string();
+
+                /*if (num > 0 && this.method_13(songEntry2))
+                {*/
+                    //songEntry2.method_4();
+                    song.date_added = 0;//DateTime.Now.Date;
+                    songs.push(song);
+                    /*if (this.bool_0 || (num == 1 && !flag3))
                     {
-                        this.bool_0 = false;
-                        if (this.method_6(songEntry2))
-                        {
-                            if (num > 0 && this.method_13(songEntry2))
-                            {
-                                songEntry2.method_4();
-                                songEntry2.dateAdded = DateTime.Now.Date;
-                                GClass54.list_0.Add(songEntry2); // THE REAL LIST
-                                if (this.bool_0 || (num == 1 && !flag3))
-                                {
-                                    songEntry2.method_10(num == 1 && !flag3);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            this.list_6.Add(text);
-                        }
-                    }
-                    else
-                    {
-                        this.list_10.Add(text);
-                    }
-                }*/
+                        songEntry2.method_10(num == 1 && !flag3);
+                    }*/
+                //}
             }
         }
     }
 
     println!("{:?}", aaaa);
+    songs
 }

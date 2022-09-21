@@ -5,13 +5,18 @@ mod reader;
 mod scanner;
 
 use std::fs::File;
+use std::io::prelude::*;
 
 const VERSION: i32 = 20220812;
 
 fn main() {
     println!("Hello, world!");
 
-    scanner::scan_folder();
+    let songs = scanner::scan_folder();
+    let serialized = serde_json::to_string(&songs).unwrap();
+
+    let mut testout = File::create("stuff/debug.json").unwrap();
+    write!(testout, "{}", serialized).unwrap();
 
     /*let mut f = File::open("stuff/songcache.bin").unwrap();
     let out = reader::read_cache(&mut f).unwrap();
