@@ -7,14 +7,17 @@ All files will be served statically from the webserver.
 ## Todo
 * a lot
 * Reading
-    * proper dates
+    * Proper dates
 * Writing / Scanning
+    * Proper dates
     * Checksum
-    * Charts (whatever it even is)
-    * proper dates
-    * Bug checking and fixing
-    * last element of metadata
+    * Charts
+        * Some kind of instrument / difficulty parsing
+    * Lyrics
+        * Find `phrase_start` / `phrase_end` / `lyric` in notes.chart
+        * Midi parsing is a bit harder
     * Duplicate detection
-    * more bug checking and fixing
+    * Bug checking and fixing
+* Preview generation (generate a preview audio file for fast scrubbing)
 
 tldr it's not done, don't ask when.

@@ -6,13 +6,15 @@ mod scanner;
 
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::Path;
 
 const VERSION: i32 = 20220812;
 
 fn main() {
     println!("Hello, world!");
 
-    let songs = scanner::scan_folder();
+    let peth = Path::new("E:\\Spel\\Annat\\Clone Hero\\Songs");
+    let songs = scanner::scan_folder(&peth);
     let serialized = serde_json::to_string(&songs).unwrap();
 
     let mut testout = File::create("stuff/debug.json").unwrap();
