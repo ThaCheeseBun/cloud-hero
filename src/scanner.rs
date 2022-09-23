@@ -1,11 +1,14 @@
 use crate::{songentry::SongEntry, util};
 use configparser::ini::Ini;
+use std::fs::File;
+use std::io::prelude::*;
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fs,
-    path::{Path, PathBuf}
+    path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
+use midly::{Smf, MetaMessage};
 
 const VIDEO_EXTS: [&str; 6] = ["mp4", "avi", "webm", "vp8", "ogv", "mpeg"];
 const METADATA_DEFAULTS: [&str; 7] = [
@@ -120,66 +123,132 @@ fn read_ini(song: &mut SongEntry, p: &PathBuf) -> bool {
     flag
 }
 
-fn read_chart(song: &mut SongEntry, p: &PathBuf) -> bool {
-    let raw_text = util::string_from_file(&p);
-
-    for line in raw_text.lines() {
-        let line = line.trim();
-        if line == "}" {
-            break;
-        }
-
-        let arr_maybe = line.split_once('=');
-        if arr_maybe.is_none() {
-            continue;
-        }
-        let arr = arr_maybe.unwrap();
-
-        let key = arr.0.to_lowercase();
-        let val = arr.1.replace("\"", "").trim().to_string();
-
-        match key.trim() {
-            "charter" => song.metadata[5] = val,
-            "artist" => song.metadata[1] = val,
-            //"offset" => song
-            "genre" => song.metadata[3] = val,
-            "album" => song.metadata[2] = val,
-            "year" => song.metadata[4] = val.replace(", ", ""),
-            "name" => {
-                if key.trim() == "TEMPO TRACK" || key.trim() == "" || key.trim() == "midi_export" {
-                    return false;
-                }
-                song.metadata[0] = val;
-            }
-            _ => {}
+fn read_mid(song: &mut SongEntry, buf: &[u8]) {
+    let smf = Smf::parse(buf).unwrap();
+    for i in 0..smf.tracks.len() {
+        for j in 0..smf.tracks[i].len() {
+            match smf.tracks[i][j].kind {
+                //midly::TrackEventKind::Meta(MetaMessage::TrackNumber(m)) => println!("TrackNumber:{:?}", m.unwrap_or(0)),
+                //midly::TrackEventKind::Meta(MetaMessage::Text(m)) => println!("Text:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::Copyright(m)) => println!("Copyright:{:?}", String::from_utf8_lossy(m)),
+                midly::TrackEventKind::Meta(MetaMessage::TrackName(m)) => {
+                    let str = String::from_utf8_lossy(m).to_lowercase();
+                    println!("TrackName:{:?}", str);
+                    if str.ends_with("vocals") {
+                        song.lyrics = true;
+                    }
+                },
+                //midly::TrackEventKind::Meta(MetaMessage::InstrumentName(m)) => println!("InstrumentName:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::Lyric(m)) => println!("Lyric:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::Marker(m)) => println!("Marker:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::CuePoint(m)) => println!("CuePoint:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::ProgramName(m)) => println!("ProgramName:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::DeviceName(m)) => println!("DeviceName:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::MidiChannel(m)) => println!("MidiChannel:{:?}", m),
+                //midly::TrackEventKind::Meta(MetaMessage::MidiPort(m)) => println!("MidiPort:{:?}", m),
+                //midly::TrackEventKind::Meta(MetaMessage::EndOfTrack) => println!("EndOfTrack"),
+                //midly::TrackEventKind::Meta(MetaMessage::Tempo(m)) => println!("Tempo:{:?}", m),
+                //midly::TrackEventKind::Meta(MetaMessage::SmpteOffset(m)) => println!("SmpteOffset:{:?}", m),
+                //midly::TrackEventKind::Meta(MetaMessage::TimeSignature(a, b, c, d)) => println!("TimeSignature:{:?},{:?},{:?},{:?}", a, b, c, d),
+                //midly::TrackEventKind::Meta(MetaMessage::KeySignature(a, b)) => println!("KeySignature:{:?},{:?}", a, b),
+                //midly::TrackEventKind::Meta(MetaMessage::SequencerSpecific(m)) => println!("SequencerSpecific:{:?}", String::from_utf8_lossy(m)),
+                //midly::TrackEventKind::Meta(MetaMessage::Unknown(a, b)) => println!("Unknown:{:?},{:?}", a, String::from_utf8_lossy(b)),
+                _ => {}
+            };
         }
     }
-
-    return song.metadata[0] != "";
 }
 
-fn create_song_entry(p: &Path) -> Option<SongEntry> {
-    let mut song = SongEntry::default();
+const INST: [&str; 10] = [
+    "none",
+    "single",
+    "doublebass",
+    "doublerhythm",
+    "doubleguitar",
+    "ghlguitar",
+    "ghlbass",
+    "drums",
+    "keyboard",
+    "band",
+];
+const DIFF: [&str; 4] = ["easy", "medium", "hard", "expert"];
 
-    let ini_path = p.join("song.ini");
-    let chart_path = p.join("notes.chart");
+fn read_chart(song: &mut SongEntry, buf: &[u8]) {
+    let raw_text = util::string_from_bytes(buf);
 
-    song.folder_path = p.to_string_lossy().to_string();
-
-    if !read_ini(&mut song, &ini_path) {
-        if read_chart(&mut song, &chart_path) {
-            return Some(song);
-        }
-    } else {
-        return Some(song);
+    // quickly check to see if lyrics are present
+    if raw_text.find("phrase_start").is_some() {
+        song.lyrics = true;
     }
 
-    None
+    // loop through all lines
+    let mut section = String::new();
+    for line in raw_text.lines() {
+        let line = line.trim();
+
+        // extract current section
+        if line.starts_with('[') {
+            section = line
+                .get(1..line.len() - 1)
+                .unwrap()
+                .to_string()
+                .to_lowercase();
+
+            for d in 0..DIFF.len() {
+                if section.starts_with(DIFF[d]) {
+                    for i in 0..INST.len() {
+                        if section.ends_with(INST[i]) {
+                            let num = 1i64 << ((i - 1) * 4 + d);
+                            if (song.charts & num) == num {
+                                break;
+                            }
+                            song.charts |= num;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // if metadata section
+        if section == "song" {
+            // split key and value, ignore errors
+            let arr_maybe = line.split_once('=');
+            if arr_maybe.is_none() {
+                continue;
+            }
+            let arr = arr_maybe.unwrap();
+
+            // properly format key and value
+            let key = arr.0.to_lowercase();
+            let val = arr.1.replace("\"", "").trim().to_string();
+
+            match key.trim() {
+                "charter" => song.metadata[5] = val,
+                "artist" => song.metadata[1] = val,
+                //"offset" => song
+                "genre" => song.metadata[3] = val,
+                "album" => song.metadata[2] = val,
+                "year" => song.metadata[4] = val.replace(", ", ""),
+                "name" => {
+                    if key.trim() == "TEMPO TRACK"
+                        || key.trim() == ""
+                        || key.trim() == "midi_export"
+                    {
+                        return;
+                    }
+                    song.metadata[0] = val;
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
-    let mut aaaa = 0;
     let mut songs = vec![];
+    let mut checksums = vec![];
 
     for entry in WalkDir::new(p) {
         let entry = entry.unwrap();
@@ -191,8 +260,9 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
             let mut chart_flag = false;
             let mut ini_flag = false;
             let mut video_flag = false;
-            let mut chart_name: Option<OsString> = None;
+            let mut chart_name = String::new();
 
+            // scan current folder
             for file in fs::read_dir(entry.path()).unwrap() {
                 let file = file.unwrap();
                 let name = file
@@ -210,10 +280,10 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                 if name == "notes" {
                     if extension == "mid" {
                         mid_flag = true;
-                        chart_name = Some(file.file_name());
+                        chart_name = file.file_name().to_string_lossy().to_string();
                     } else if extension == "chart" {
                         chart_flag = true;
-                        chart_name = Some(file.file_name());
+                        chart_name = file.file_name().to_string_lossy().to_string();
                     }
                 } else if name == "song" && extension == "ini" {
                     ini_flag = true;
@@ -222,16 +292,47 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                 }
             }
 
+            // idk what this does but it works :tm:
             if !(!mid_flag && !chart_flag) || ini_flag {
-                let song = create_song_entry(entry.path());
-                if song.is_none() {
+                let s_path = entry.path();
+                let mut song = SongEntry::default();
+
+                song.folder_path = s_path.to_string_lossy().to_string();
+
+                // skip if song.ini is invalid
+                if !read_ini(&mut song, &s_path.join("song.ini")) {
                     continue;
                 }
-                let mut song = song.unwrap();
-                aaaa = aaaa + 1;
 
+                // read all of the note data and metadata
+                let notes_data = {
+                    let mut f = File::open(s_path.join(&chart_name)).unwrap();
+                    let mut d = vec![];
+                    f.read_to_end(&mut d).unwrap();
+                    d
+                };
+
+                // calcute md5 checksum for the data
+                let check = md5::compute(&notes_data);
+                // check for duplicates
+                if checksums.contains(&check.0) {
+                    println!("duplicate {:?}", s_path);
+                    continue;
+                }
+                song.checksum = check.0;
+                checksums.push(check.0);
+
+                // reuse the data to read all needed metadata
+                if mid_flag {
+                    read_mid(&mut song, &notes_data);
+                    //break;
+                } else if chart_flag {
+                    read_chart(&mut song, &notes_data);
+                }
+
+                // add some stuffs
                 song.video_background = video_flag;
-                song.chart_name = chart_name.unwrap().to_string_lossy().to_string();
+                song.chart_name = chart_name;
                 song.date_added = 0; //DateTime.Now.Date;
 
                 // fix empty metadata
@@ -285,10 +386,11 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                 }
 
                 songs.push(song);
+                println!("{:?}", songs.len());
             }
         }
     }
 
-    println!("{:?}", aaaa);
+    println!("{:?}", songs.len());
     songs
 }

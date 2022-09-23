@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::{fs::File, io::Read, path::PathBuf};
@@ -11,8 +12,7 @@ use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
    UTF-8 BOM
    UTF-8
 */
-pub fn string_from_file(p: &PathBuf) -> String {
-    let mut f = File::open(p).unwrap();
+fn string_internal_reader<R: Read + Seek>(f: &mut R) -> String {
     let mut buf = [0u8; 3];
     f.read_exact(&mut buf).unwrap();
 
@@ -60,4 +60,12 @@ pub fn string_from_file(p: &PathBuf) -> String {
         f.read_to_end(&mut buffer).unwrap();
         String::from_utf8_lossy(&buffer).to_string()
     }
+}
+pub fn string_from_file(p: &PathBuf) -> String {
+    let mut f = File::open(p).unwrap();
+    string_internal_reader(&mut f)
+}
+pub fn string_from_bytes(b: &[u8]) -> String {
+    let mut c = Cursor::new(b);
+    string_internal_reader(&mut c)
 }
