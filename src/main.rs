@@ -13,7 +13,7 @@ const VERSION: i32 = 20220812;
 fn main() {
     println!("Hello, world!");
 
-    let peth = Path::new("E:\\Spel\\Annat\\Clone Hero\\Songs");
+    let peth = Path::new("E:\\Spel\\Annat\\Clone Hero\\Songs\\Guitar Hero\\Guitar Hero 5\\Guitar Hero 5\\Duran Duran - Hungry Like the Wolf");
     let songs = scanner::scan_folder(&peth);
     let serialized = serde_json::to_string(&songs).unwrap();
 

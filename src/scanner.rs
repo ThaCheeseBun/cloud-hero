@@ -1,5 +1,6 @@
 use crate::{songentry::SongEntry, util};
 use configparser::ini::Ini;
+use midly::{MetaMessage, Smf};
 use std::fs::File;
 use std::io::prelude::*;
 use std::{
@@ -8,7 +9,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
-use midly::{Smf, MetaMessage};
 
 const VIDEO_EXTS: [&str; 6] = ["mp4", "avi", "webm", "vp8", "ogv", "mpeg"];
 const METADATA_DEFAULTS: [&str; 7] = [
@@ -123,38 +123,82 @@ fn read_ini(song: &mut SongEntry, p: &PathBuf) -> bool {
     flag
 }
 
+/*const INST_2: [&str; 10] = [
+    "none", // -1
+    "guitar", // 0
+    "bass", // 1
+    "rhythm", // 2
+    "guitar coop", // 3
+    "guitar ghl", // 4
+    "bass ghl", // 5
+    "drums / drum", // 6
+    "keys", // 7
+    "band", // 8
+];*/
 fn read_mid(song: &mut SongEntry, buf: &[u8]) {
     let smf = Smf::parse(buf).unwrap();
     for i in 0..smf.tracks.len() {
+        let mut diff_str = String::new();
+        let mut diff_arr = [false; 4];
         for j in 0..smf.tracks[i].len() {
-            match smf.tracks[i][j].kind {
-                //midly::TrackEventKind::Meta(MetaMessage::TrackNumber(m)) => println!("TrackNumber:{:?}", m.unwrap_or(0)),
-                //midly::TrackEventKind::Meta(MetaMessage::Text(m)) => println!("Text:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::Copyright(m)) => println!("Copyright:{:?}", String::from_utf8_lossy(m)),
-                midly::TrackEventKind::Meta(MetaMessage::TrackName(m)) => {
+            match smf.tracks[i][j].kind {midly::TrackEventKind::Meta(MetaMessage::TrackName(m)) => {
                     let str = String::from_utf8_lossy(m).to_lowercase();
-                    println!("TrackName:{:?}", str);
-                    if str.ends_with("vocals") {
-                        song.lyrics = true;
+                    println!("{:?}", str);
+                    match str.as_str() {
+                        "part vocals" => {
+                            song.lyrics = true;
+                            break;
+                        }
+                        "part keys" | "part drum" | "part rhythm" | "part bass ghl"
+                        | "part guitar coop" | "part bass" | "part guitar ghl" | "part guitar"
+                        | "part drums" => {
+                            diff_str = str;
+                        }
+                        _ => {
+                            break;
+                        }
                     }
-                },
-                //midly::TrackEventKind::Meta(MetaMessage::InstrumentName(m)) => println!("InstrumentName:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::Lyric(m)) => println!("Lyric:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::Marker(m)) => println!("Marker:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::CuePoint(m)) => println!("CuePoint:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::ProgramName(m)) => println!("ProgramName:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::DeviceName(m)) => println!("DeviceName:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::MidiChannel(m)) => println!("MidiChannel:{:?}", m),
-                //midly::TrackEventKind::Meta(MetaMessage::MidiPort(m)) => println!("MidiPort:{:?}", m),
-                //midly::TrackEventKind::Meta(MetaMessage::EndOfTrack) => println!("EndOfTrack"),
-                //midly::TrackEventKind::Meta(MetaMessage::Tempo(m)) => println!("Tempo:{:?}", m),
-                //midly::TrackEventKind::Meta(MetaMessage::SmpteOffset(m)) => println!("SmpteOffset:{:?}", m),
-                //midly::TrackEventKind::Meta(MetaMessage::TimeSignature(a, b, c, d)) => println!("TimeSignature:{:?},{:?},{:?},{:?}", a, b, c, d),
-                //midly::TrackEventKind::Meta(MetaMessage::KeySignature(a, b)) => println!("KeySignature:{:?},{:?}", a, b),
-                //midly::TrackEventKind::Meta(MetaMessage::SequencerSpecific(m)) => println!("SequencerSpecific:{:?}", String::from_utf8_lossy(m)),
-                //midly::TrackEventKind::Meta(MetaMessage::Unknown(a, b)) => println!("Unknown:{:?},{:?}", a, String::from_utf8_lossy(b)),
+                }
+                midly::TrackEventKind::Midi {
+                    channel: _,
+                    message: midly::MidiMessage::NoteOn { key, vel: _ },
+                } => {
+                    match key.as_int() {
+                        58..=66 => diff_arr[0] = true,
+                        70..=78 => diff_arr[1] = true,
+                        82..=90 => diff_arr[2] = true,
+                        94..=102 => diff_arr[3] = true,
+                        _ => {}
+                    }
+                }
                 _ => {}
             };
+        }
+        if diff_str != String::new() && diff_arr != [true, true, true, true] {
+            println!("{:?}: {:?}, {:?}", diff_str, diff_arr, song.folder_path);
+        }
+        let index = {
+            match diff_str.as_str() {
+                "part guitar" => 0,
+                "part bass" => 1,
+                "part rhythm" => 2,
+                "part guitar coop" => 3,
+                "part guitar ghl" => 4,
+                "part bass ghl" => 5,
+                "part drums" | "part drum" => 6,
+                "part keys" => 7,
+                _ => -1
+            }
+        };
+        for i in 0..diff_arr.len() {
+            if !diff_arr[i] {
+                continue;
+            }
+            let num = 1i64 << (index * 4 + (i as i64));
+            if (song.charts & num) == num {
+                continue;
+            }
+            song.charts |= num;
         }
     }
 }
@@ -354,7 +398,7 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                     let mut num = -1;
                     if tempdata.len() > 0 {
                         tempdata.remove(0);
-                        num = tempdata.rfind("\\").unwrap() as i32;
+                        num = tempdata.rfind("\\").unwrap_or(0) as i32;
                     }
                     song.metadata[6] = {
                         if num == -1 {
@@ -386,7 +430,7 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                 }
 
                 songs.push(song);
-                println!("{:?}", songs.len());
+                //println!("{:?}", songs.len());
             }
         }
     }

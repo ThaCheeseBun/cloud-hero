@@ -7,6 +7,7 @@ All files will be served statically from the webserver.
 ## Notes
 * This tool will **NOT** check for errors within the notes.chart / notes.mid files. Always check if there are any bad songs with Clone Hero before using this.
 * It does not get data in the same order as Clone Hero, so some metadata like artist or song name might be different.
+* Some midi files might be incompatible with the midi parser (midly). I can't do anything to fix this atm but if you notice any odd looking difficulties, this might be the reason.
 
 ## Todo
 * a lot
