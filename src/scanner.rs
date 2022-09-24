@@ -1,6 +1,5 @@
 use crate::{songentry::SongEntry, util};
-use configparser::ini::Ini;
-use midly::{MetaMessage, Smf};
+use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
 use std::fs::File;
 use std::io::prelude::*;
 use std::{
@@ -21,24 +20,23 @@ const METADATA_DEFAULTS: [&str; 7] = [
     "Unknown Playlist",
 ];
 
-fn ini_get_int(c: &Ini, s: &str, k: &str) -> Option<i64> {
-    let raw = c.get(s, k);
-    if raw.is_none() {
-        return None;
-    }
-    let parsed = raw.unwrap().parse::<i64>();
-    if parsed.is_err() {
-        return None;
-    }
-    Some(parsed.unwrap())
+#[derive(Copy, Clone, PartialEq)]
+enum Instrument {
+    None = -1,
+    Guitar = 0,
+    Bass = 1,
+    Rhythm = 2,
+    GuitarCoop = 3,
+    GHLGuitar = 4,
+    GHLBass = 5,
+    Drums = 6,
+    Keys = 7,
+    Band = 8,
+    ProDrums = 9,
 }
 
-fn ini_get_bool(c: &Ini, s: &str, k: &str) -> Option<bool> {
-    let raw = c.get(s, k);
-    if raw.is_none() {
-        return None;
-    }
-    match raw.unwrap().to_lowercase().as_str() {
+fn ini_get_bool(v: &str) -> Option<bool> {
+    match v.to_lowercase().as_str() {
         "true" | "yes" | "t" | "y" | "1" | "on" => Some(true),
         "false" | "no" | "f" | "n" | "0" | "off" => Some(false),
         _ => None,
@@ -49,242 +47,259 @@ fn read_ini(song: &mut SongEntry, p: &PathBuf) -> bool {
     let mut flag = false;
 
     let raw_text = util::string_from_file(&p);
-    let mut config = Ini::new();
-    let i = config.read(raw_text);
-    if i.is_err() {
-        println!("Could not parse \"song.ini\" at {:?}", p);
-        return flag;
-    }
+    let mut section = String::new();
 
-    // if we have a proper song section
-    if config.sections().contains(&String::from("song")) {
-        // get all metadata
-        song.metadata[0] = config.get("song", "name").unwrap_or(String::from(""));
-        song.metadata[1] = config.get("song", "artist").unwrap_or(String::from(""));
-        song.metadata[2] = config.get("song", "album").unwrap_or(String::from(""));
-        song.metadata[3] = config.get("song", "genre").unwrap_or(String::from(""));
-        song.metadata[4] = config.get("song", "year").unwrap_or(String::from(""));
-        song.metadata[5] = config
-            .get("song", {
-                if config.get("song", "charter").is_some() {
-                    "charter"
-                } else {
-                    "frets"
-                }
-            })
-            .unwrap_or(String::from(""));
+    for line in raw_text.lines() {
+        let line = line.trim();
 
-        // store all intensities
-        song.intensities[8] = ini_get_int(&config, "song", "diff_band").unwrap_or(-1) as i8;
-        song.intensities[0] = ini_get_int(&config, "song", "diff_guitar").unwrap_or(-1) as i8;
-        song.intensities[2] = ini_get_int(&config, "song", "diff_rhythm").unwrap_or(-1) as i8;
-        song.intensities[1] = ini_get_int(&config, "song", "diff_bass").unwrap_or(-1) as i8;
-        song.intensities[6] = ini_get_int(&config, "song", "diff_drums").unwrap_or(-1) as i8;
-        song.intensities[9] = ini_get_int(&config, "song", "diff_drums_real").unwrap_or(-1) as i8;
-        song.intensities[7] = ini_get_int(&config, "song", "diff_keys").unwrap_or(-1) as i8;
-        song.intensities[4] = ini_get_int(&config, "song", "diff_guitarghl").unwrap_or(-1) as i8;
-        song.intensities[5] = ini_get_int(&config, "song", "diff_bassghl").unwrap_or(-1) as i8;
+        if line.starts_with('[') {
+            let end_pos = line.find(']').unwrap_or(line.len() - 1);
+            section = line.get(1..end_pos).unwrap().to_lowercase();
+            continue;
+        }
 
-        song.preview_start =
-            ini_get_int(&config, "song", "preview_start_time").unwrap_or(-1) as i32;
-        song.icon_name = config
-            .get("song", "icon")
-            .unwrap_or(String::from(""))
-            .to_lowercase();
-        song.playlist_track =
-            ini_get_int(&config, "song", "playlist_track").unwrap_or(16000) as i16;
-        song.modchart = ini_get_bool(&config, "song", "modchart").unwrap_or(false);
-        song.song_length = ini_get_int(&config, "song", "song_length").unwrap_or(0) as i32;
-        song.force_pro_drums = ini_get_bool(&config, "song", "pro_drums").unwrap_or(false);
-        song.force_five_lane = ini_get_bool(&config, "song", "five_lane_drums").unwrap_or(false);
-        song.top_level_playlist = config
-            .get("song", "playlist")
-            .unwrap_or(String::from(""))
-            .to_lowercase();
-        song.sub_playlist = config
-            .get("song", "sub_playlist")
-            .unwrap_or(String::from(""))
-            .to_lowercase();
+        // split key and value, ignore errors
+        let arr_ = line.split_once('=');
+        if arr_.is_none() {
+            continue;
+        }
+        let arr = arr_.unwrap();
 
-        song.album_track = ini_get_int(&config, "song", {
-            if config.get("song", "album_track").is_some() {
-                "album_track"
-            } else {
-                "track"
+        // properly format key and value
+        let key = arr.0.trim().to_lowercase();
+        let val = arr.1.trim().to_string();
+
+        if section == "song" {
+            flag = true;
+
+            match key.as_str() {
+                "name" => song.metadata[0] = val,
+                "artist" => song.metadata[1] = val,
+                "album" => song.metadata[2] = val,
+                "genre" => song.metadata[3] = val,
+                "year" => song.metadata[4] = val,
+                "charter" | "frets" => song.metadata[5] = val,
+
+                "diff_band" => song.intensities[8] = val.parse::<i8>().unwrap_or(-1),
+                "diff_guitar" => song.intensities[0] = val.parse::<i8>().unwrap_or(-1),
+                "diff_rhythm" => song.intensities[2] = val.parse::<i8>().unwrap_or(-1),
+                "diff_bass" => song.intensities[1] = val.parse::<i8>().unwrap_or(-1),
+                "diff_drums" => song.intensities[6] = val.parse::<i8>().unwrap_or(-1),
+                "diff_drums_real" => song.intensities[9] = val.parse::<i8>().unwrap_or(-1),
+                "diff_keys" => song.intensities[7] = val.parse::<i8>().unwrap_or(-1),
+                "diff_guitarghl" => song.intensities[4] = val.parse::<i8>().unwrap_or(-1),
+                "diff_bassghl" => song.intensities[5] = val.parse::<i8>().unwrap_or(-1),
+
+                "preview_start_time" => song.preview_start = val.parse::<i32>().unwrap_or(-1),
+                "icon" => song.icon_name = val.to_lowercase(),
+                "playlist_track" => song.playlist_track = val.parse::<i16>().unwrap_or(16000),
+                "modchart" => song.modchart = ini_get_bool(&val).unwrap_or(false),
+                "song_length" => song.song_length = val.parse::<i32>().unwrap_or(0),
+                "pro_drums" => song.force_pro_drums = ini_get_bool(&val).unwrap_or(false),
+                "five_lane_drums" => song.force_five_lane = ini_get_bool(&val).unwrap_or(false),
+                "playlist" => song.top_level_playlist = val.to_lowercase(),
+                "sub_playlist" => song.sub_playlist = val.to_lowercase(),
+
+                "album_track" | "track" => song.album_track = val.parse::<i16>().unwrap_or(16000),
+                _ => {}
             }
-        })
-        .unwrap_or(16000) as i16;
-
-        flag = true;
-    } else {
-        flag = false;
+    
+            // fix intensities
+            song.intensities[3] = 0;
+            if song.intensities[9] == -1 {
+                song.intensities[9] = song.intensities[6];
+            }
+        }
     }
 
     flag
 }
 
-/*const INST_2: [&str; 10] = [
-    "none", // -1
-    "guitar", // 0
-    "bass", // 1
-    "rhythm", // 2
-    "guitar coop", // 3
-    "guitar ghl", // 4
-    "bass ghl", // 5
-    "drums / drum", // 6
-    "keys", // 7
-    "band", // 8
-];*/
-fn read_mid(song: &mut SongEntry, buf: &[u8]) {
+fn apply_charts(song: &mut SongEntry, inst: Instrument, flag: bool, diff: i64) {
+    if inst == Instrument::Drums && (flag || song.force_pro_drums || song.force_five_lane) {
+        let num = 1 << (Instrument::ProDrums as i64 * Instrument::GHLGuitar as i64 + diff);
+        if !((song.charts & num) == num) {
+            song.charts |= num;
+        }
+    }
+    let num = 1 << (inst as i64 * Instrument::GHLGuitar as i64 + diff);
+    if !((song.charts & num) == num) {
+        song.charts |= num;
+    }
+}
+
+fn read_midi(song: &mut SongEntry, buf: &[u8]) {
     let smf = Smf::parse(buf).unwrap();
     for i in 0..smf.tracks.len() {
-        let mut diff_str = String::new();
-        let mut diff_arr = [false; 4];
+        let mut inst = Instrument::None;
+        let mut diff = [false; 4];
+        let mut flag = false;
+
         for j in 0..smf.tracks[i].len() {
-            match smf.tracks[i][j].kind {midly::TrackEventKind::Meta(MetaMessage::TrackName(m)) => {
+            match smf.tracks[i][j].kind {
+                TrackEventKind::Meta(MetaMessage::TrackName(m)) => {
                     let str = String::from_utf8_lossy(m).to_lowercase();
-                    println!("{:?}", str);
                     match str.as_str() {
                         "part vocals" => {
                             song.lyrics = true;
                             break;
                         }
-                        "part keys" | "part drum" | "part rhythm" | "part bass ghl"
-                        | "part guitar coop" | "part bass" | "part guitar ghl" | "part guitar"
-                        | "part drums" => {
-                            diff_str = str;
-                        }
+                        "part guitar" | "t1 gems" => inst = Instrument::Guitar,
+                        "part bass" => inst = Instrument::Bass,
+                        "part rhythm" => inst = Instrument::Rhythm,
+                        "part guitar coop" => inst = Instrument::GuitarCoop,
+                        "part guitar ghl" => inst = Instrument::GHLGuitar,
+                        "part bass ghl" => inst = Instrument::GHLBass,
+                        "part drums" | "part drum" => inst = Instrument::Drums,
+                        "part keys" => inst = Instrument::Keys,
                         _ => {
                             break;
                         }
                     }
                 }
-                midly::TrackEventKind::Midi {
+                TrackEventKind::Midi {
                     channel: _,
-                    message: midly::MidiMessage::NoteOn { key, vel: _ },
+                    message: MidiMessage::NoteOn { key, vel: _ },
                 } => {
                     match key.as_int() {
-                        58..=66 => diff_arr[0] = true,
-                        70..=78 => diff_arr[1] = true,
-                        82..=90 => diff_arr[2] = true,
-                        94..=102 => diff_arr[3] = true,
+                        58..=66 => diff[0] = true,
+                        70..=78 => diff[1] = true,
+                        82..=90 => diff[2] = true,
+                        94..=102 => diff[3] = true,
+                        110..=112 => flag = true,
                         _ => {}
+                    }
+                    if key.as_int() == 101 {
+                        flag = true;
                     }
                 }
                 _ => {}
             };
         }
-        if diff_str != String::new() && diff_arr != [true, true, true, true] {
-            println!("{:?}: {:?}, {:?}", diff_str, diff_arr, song.folder_path);
-        }
-        let index = {
-            match diff_str.as_str() {
-                "part guitar" => 0,
-                "part bass" => 1,
-                "part rhythm" => 2,
-                "part guitar coop" => 3,
-                "part guitar ghl" => 4,
-                "part bass ghl" => 5,
-                "part drums" | "part drum" => 6,
-                "part keys" => 7,
-                _ => -1
+
+        if inst != Instrument::None && diff != [false, false, false, false] {
+            if diff != [true, true, true, true] {
+                println!("{:?}: {:?}, {:?}", inst as i64, diff, song.folder_path);
             }
-        };
-        for i in 0..diff_arr.len() {
-            if !diff_arr[i] {
-                continue;
+            for d in 0..diff.len() {
+                if diff[d] {
+                    apply_charts(song, inst, flag, d as i64);
+                }
             }
-            let num = 1i64 << (index * 4 + (i as i64));
-            if (song.charts & num) == num {
-                continue;
-            }
-            song.charts |= num;
         }
     }
 }
 
-const INST: [&str; 10] = [
-    "none",
-    "single",
-    "doublebass",
-    "doublerhythm",
-    "doubleguitar",
-    "ghlguitar",
-    "ghlbass",
-    "drums",
-    "keyboard",
-    "band",
-];
 const DIFF: [&str; 4] = ["easy", "medium", "hard", "expert"];
-
-fn read_chart(song: &mut SongEntry, buf: &[u8]) {
+fn read_chart(song: &mut SongEntry, buf: &[u8], full: bool) {
     let raw_text = util::string_from_bytes(buf);
 
-    // quickly check to see if lyrics are present
-    if raw_text.find("phrase_start").is_some() {
-        song.lyrics = true;
-    }
-
-    // loop through all lines
     let mut section = String::new();
+    let mut inst = Instrument::None;
+    let mut diff = -1i64;
+    let mut notes_flag = false;
+    let mut drums_flag = false;
+
     for line in raw_text.lines() {
         let line = line.trim();
 
-        // extract current section
-        if line.starts_with('[') {
-            section = line
-                .get(1..line.len() - 1)
-                .unwrap()
-                .to_string()
-                .to_lowercase();
+        // skip this one no one cares
+        if line == "{" {
+            continue;
+        }
 
+        // on new section
+        if line.starts_with('[') {
+            section = line.get(1..line.len() - 1).unwrap().to_lowercase();
+
+            // get inst and diff berforehand
             for d in 0..DIFF.len() {
                 if section.starts_with(DIFF[d]) {
-                    for i in 0..INST.len() {
-                        if section.ends_with(INST[i]) {
-                            let num = 1i64 << ((i - 1) * 4 + d);
-                            if (song.charts & num) == num {
-                                break;
-                            }
-                            song.charts |= num;
-                            break;
+                    diff = d as i64;
+                    inst = {
+                        match section.replace(DIFF[d], "").as_str() {
+                            "single" => Instrument::Guitar,
+                            "doublebass" => Instrument::Bass,
+                            "doublerhythm" => Instrument::Rhythm,
+                            "doubleguitar" => Instrument::GuitarCoop,
+                            "ghlguitar" => Instrument::GHLGuitar,
+                            "ghlbass" => Instrument::GHLBass,
+                            "drums" => Instrument::Drums,
+                            "keyboard" => Instrument::Keys,
+                            "band" => Instrument::Band,
+                            _ => Instrument::None,
                         }
-                    }
+                    };
                     break;
                 }
             }
+
+            continue;
         }
 
-        // if metadata section
-        if section == "song" {
-            // split key and value, ignore errors
-            let arr_maybe = line.split_once('=');
-            if arr_maybe.is_none() {
-                continue;
+        // apply data when done with section
+        if line == "}" {
+            if inst != Instrument::None && diff >= 0 && notes_flag {
+                apply_charts(song, inst, drums_flag, diff);
             }
-            let arr = arr_maybe.unwrap();
+            inst = Instrument::None;
+            diff = -1i64;
+            notes_flag = false;
+            drums_flag = false;
+        }
 
-            // properly format key and value
-            let key = arr.0.to_lowercase();
-            let val = arr.1.replace("\"", "").trim().to_string();
+        // split key and value, ignore errors
+        let arr_ = line.split_once('=');
+        if arr_.is_none() {
+            continue;
+        }
+        let arr = arr_.unwrap();
 
-            match key.trim() {
-                "charter" => song.metadata[5] = val,
-                "artist" => song.metadata[1] = val,
-                //"offset" => song
-                "genre" => song.metadata[3] = val,
-                "album" => song.metadata[2] = val,
-                "year" => song.metadata[4] = val.replace(", ", ""),
-                "name" => {
-                    if key.trim() == "TEMPO TRACK"
-                        || key.trim() == ""
-                        || key.trim() == "midi_export"
-                    {
-                        return;
+        // properly format key and value
+        let key = arr.0.trim().to_lowercase();
+        let val = arr.1.replace("\"", "").trim().to_string();
+
+        // metadata parsing
+        if section == "song" {
+            if full {
+                match key.as_str() {
+                    "charter" => song.metadata[5] = val,
+                    "artist" => song.metadata[1] = val,
+                    //"offset" => song
+                    "genre" => song.metadata[3] = val,
+                    "album" => song.metadata[2] = val,
+                    "year" => song.metadata[4] = val.replace(", ", ""),
+                    "name" => {
+                        if val != "TEMPO TRACK" && val != "" && val != "midi_export" {
+                            song.metadata[0] = val;
+                        }
                     }
-                    song.metadata[0] = val;
+                    _ => {}
                 }
-                _ => {}
+            }
+            continue;
+        }
+
+        // lyrics checking
+        if section == "events" {
+            if !song.lyrics && val.starts_with("E lyric") {
+                song.lyrics = true;
+            }
+            continue;
+        }
+
+        // difficulty and instrument parsing
+        if val.starts_with("N") {
+            notes_flag = true;
+            if inst == Instrument::Drums
+                && !drums_flag
+                && (val.starts_with("N 5")
+                    || val.starts_with("N 32")
+                    || val.starts_with("N 66")
+                    || val.starts_with("N 67")
+                    || val.starts_with("N 68"))
+            {
+                drums_flag = true;
             }
         }
     }
@@ -341,9 +356,10 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                 let s_path = entry.path();
                 let mut song = SongEntry::default();
 
-                song.folder_path = s_path.to_string_lossy().to_string();
+                song.folder_path = s_path.to_string_lossy().to_lowercase().to_string();
 
                 // skip if song.ini is invalid
+                //if !read_ini(&mut song, &s_path.join("song.ini")) {
                 if !read_ini(&mut song, &s_path.join("song.ini")) {
                     continue;
                 }
@@ -368,10 +384,9 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
 
                 // reuse the data to read all needed metadata
                 if mid_flag {
-                    read_mid(&mut song, &notes_data);
-                    //break;
+                    read_midi(&mut song, &notes_data);
                 } else if chart_flag {
-                    read_chart(&mut song, &notes_data);
+                    read_chart(&mut song, &notes_data, false);
                 }
 
                 // add some stuffs
@@ -416,7 +431,7 @@ pub fn scan_folder(p: &Path) -> Vec<SongEntry> {
                             } else {
                                 String::from(song.metadata[6].get(..temppos.unwrap()).unwrap())
                             }
-                        };
+                        }.to_lowercase();
                     }
                     song.sub_playlist = String::from("");
                 } else {

@@ -10,7 +10,6 @@ license = "MIT"
 byteorder = "1"
 md5 = "0.7"
 walkdir = "2"
-configparser = "3"
 midly = "0.5"
 
 serde = { version = "1", features = ["derive"] }

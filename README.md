@@ -8,6 +8,7 @@ All files will be served statically from the webserver.
 * This tool will **NOT** check for errors within the notes.chart / notes.mid files. Always check if there are any bad songs with Clone Hero before using this.
 * It does not get data in the same order as Clone Hero, so some metadata like artist or song name might be different.
 * Some midi files might be incompatible with the midi parser (midly). I can't do anything to fix this atm but if you notice any odd looking difficulties, this might be the reason.
+* Ini parsing is handled slightly different. Double values will result in the last one being used.
 
 ## Todo
 * a lot
@@ -16,12 +17,8 @@ All files will be served statically from the webserver.
 * Writing / Scanning
     * Proper dates
     * ~~Checksum~~
-    * Charts
-        * ~~notes.chart~~
-        * notes.mid
+    * ~~Charts~~
     * ~~Lyrics~~
-        * ~~Find `phrase_start` / `phrase_end` / `lyric` in notes.chart~~
-        * ~~Midi parsing is a bit harder~~
     * ~~Duplicate detection~~
     * Bug checking and fixing
 * Multithreading

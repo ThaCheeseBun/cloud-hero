@@ -1,6 +1,8 @@
 use serde::Serialize;
 
-#[derive(Serialize, Debug, Default)]
+const EMPTY_STRING: String = String::new();
+
+#[derive(Serialize, Debug)]
 #[allow(dead_code)]
 pub struct SongEntry {
     pub album_track: i16,           // short YEP
@@ -34,4 +36,29 @@ pub struct SongEntry {
     //scores: String,               // GClass55, Change later
     //song_enc: String,             // GClass9, change later
 }
-
+impl SongEntry {
+    pub fn default() -> SongEntry {
+        SongEntry {
+            album_track: 16000,
+            chart_name: EMPTY_STRING,
+            charts: 0,
+            checksum: [0; 16],
+            date_added: 0,
+            folder_path: EMPTY_STRING,
+            force_five_lane: false,
+            force_pro_drums: false,
+            icon_name: EMPTY_STRING,
+            intensities: [-1; 10],
+            is_enc: false,
+            lyrics: false,
+            metadata: [EMPTY_STRING; 7],
+            modchart: false,
+            playlist_track: 16000,
+            preview_start: -1,
+            song_length: 0,
+            sub_playlist: EMPTY_STRING,
+            top_level_playlist: EMPTY_STRING,
+            video_background: false,
+        }
+    }
+}
