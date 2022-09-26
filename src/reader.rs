@@ -37,7 +37,7 @@ fn read_boolean(f: &mut File) -> bool {
     }
 }
 
-pub fn read_cache(f: &mut File) -> Option<Vec<SongEntry>> {
+pub fn read_cache(f: &mut File, cloud_format: bool) -> Option<Vec<SongEntry>> {
 
     // verify version
     let version = f.read_i32::<LittleEndian>().unwrap();
@@ -70,7 +70,7 @@ pub fn read_cache(f: &mut File) -> Option<Vec<SongEntry>> {
         let text = read_string(f);
         let _ = f.read_i64::<LittleEndian>().unwrap();
         let _ = f.read_i64::<LittleEndian>().unwrap();
-        let song_entry = SongEntry {
+        let mut song_entry = SongEntry {
             folder_path: text,
 
             chart_name: read_string(f),
@@ -115,8 +115,28 @@ pub fn read_cache(f: &mut File) -> Option<Vec<SongEntry>> {
                 let mut a: [u8; 16] = [0; 16];
                 f.read_exact(&mut a).unwrap();
                 a
-            }
+            },
+
+            // preset these first
+            audio_files: vec![],
+            album_art_name: String::new(),
+            image_background: false,
+            image_background_name: String::new(),
+            video_background_name: String::new(),
         };
+
+        // extended cloud format
+        if cloud_format {
+            let num = f.read_i8().unwrap();
+            for _ in 0..num {
+                song_entry.audio_files.push(read_string(f));
+            }
+            song_entry.album_art_name = read_string(f);
+            song_entry.image_background = read_boolean(f);
+            song_entry.image_background_name = read_string(f);
+            song_entry.video_background_name = read_string(f);
+        }
+
         out.push(song_entry);
     }
 

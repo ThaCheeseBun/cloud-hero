@@ -5,36 +5,46 @@ const EMPTY_STRING: String = String::new();
 #[derive(Serialize, Debug)]
 #[allow(dead_code)]
 pub struct SongEntry {
-    pub album_track: i16,           // short YEP
-    pub chart_name: String,         // string YEP2
-    pub charts: i64,                // GStruct6 change
-    pub checksum: [u8; 16],         // SongHash change
-    pub date_added: i64,            // DateTime change
+
+    // normal format
+    pub album_track: i16,           // short
+    pub chart_name: String,         // string
+    pub charts: i64,                // GStruct6
+    pub checksum: [u8; 16],         // SongHash
+    pub date_added: i64,            // DateTime
     pub folder_path: String,        // string
-    pub force_five_lane: bool,      // bool YEP
-    pub force_pro_drums: bool,      // bool YEP
-    pub icon_name: String,          // string YEP
-    pub intensities: [i8; 10],      // sbyte[] YEP
+    pub force_five_lane: bool,      // bool
+    pub force_pro_drums: bool,      // bool
+    pub icon_name: String,          // string
+    pub intensities: [i8; 10],      // sbyte[]
     pub is_enc: bool,               // bool
     pub lyrics: bool,               // bool
-    pub metadata: [String; 7],      // GClass47[] change YEP
-    pub modchart: bool,             // bool YEP
-    pub playlist_track: i16,        // short YEP
-    pub preview_start: i32,         // int YEP
-    pub song_length: i32,           // int YEP
-    pub sub_playlist: String,       // string YEP
-    pub top_level_playlist: String, // string YEP
-    pub video_background: bool,     // bool YEP2
+    pub metadata: [String; 7],      // GClass47[]
+    pub modchart: bool,             // bool
+    pub playlist_track: i16,        // short
+    pub preview_start: i32,         // int
+    pub song_length: i32,           // int
+    pub sub_playlist: String,       // string
+    pub top_level_playlist: String, // string
+    pub video_background: bool,     // bool
 
-    //containers: String,           // dict<string, GClass9> PRIVATE, change later
+    // cloud extended format
+    pub album_art_name: String,
+    pub audio_files: Vec<String>,
+    pub image_background: bool,
+    pub image_background_name: String,
+    pub video_background_name: String,
+
+    // unused stuff from internal script
+    //containers: String,           // dict<string, GClass9> PRIVATE
     //filtered: bool,               // bool
     //is_available_online: bool,    // bool
     //is_midi_chart_cache: bool,    // bool PRIVATE
     //is_type_cached: bool,         // bool PRIVATE
     //metadata_cache: String,       // string[] PRIVATE
     //metadata_loaded: bool,        // bool
-    //scores: String,               // GClass55, Change later
-    //song_enc: String,             // GClass9, change later
+    //scores: String,               // GClass55
+    //song_enc: String,             // GClass9
 }
 impl SongEntry {
     pub fn default() -> SongEntry {
@@ -59,6 +69,12 @@ impl SongEntry {
             sub_playlist: EMPTY_STRING,
             top_level_playlist: EMPTY_STRING,
             video_background: false,
+
+            album_art_name: EMPTY_STRING,
+            audio_files: vec![],
+            image_background: false,
+            image_background_name: EMPTY_STRING,
+            video_background_name: EMPTY_STRING,
         }
     }
 }

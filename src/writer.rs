@@ -30,7 +30,7 @@ fn write_boolean(b: bool, f: &mut File) {
     }
 }
 
-pub fn write_cache(list: Vec<SongEntry>, f: &mut File) {
+pub fn write_cache(list: Vec<SongEntry>, f: &mut File, cloud_format: bool) {
     f.write_i32::<LittleEndian>(VERSION).unwrap();
 
     let mut checksum = Cursor::new(vec![0u8; list.len() * 16]);
@@ -97,5 +97,17 @@ pub fn write_cache(list: Vec<SongEntry>, f: &mut File) {
         write_string(list[i].top_level_playlist.clone(), f);
         write_string(list[i].sub_playlist.clone(), f);
         f.write(&list[i].checksum).unwrap();
+
+        // extended cloud format
+        if cloud_format {
+            f.write_i8(list[i].audio_files.len() as i8).unwrap();
+            for j in 0..list[i].audio_files.len() {
+                write_string(list[i].audio_files[j].clone(), f);
+            }
+            write_string(list[i].album_art_name.clone(), f);
+            write_boolean(list[i].image_background, f);
+            write_string(list[i].image_background_name.clone(), f);
+            write_string(list[i].video_background_name.clone(), f);
+        }
     }
 }
