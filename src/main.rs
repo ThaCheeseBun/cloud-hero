@@ -22,10 +22,12 @@ fn main() {
     let mut testout = File::create("stuff/debug.json").unwrap();
     write!(testout, "{}", serialized).unwrap();
 
-    /*let mut f = File::open("stuff/songcache.bin").unwrap();
-    let out = reader::read_cache(&mut f, cloud_format).unwrap();
-    println!("{:?}", out.len());*/
-
     let mut f2 = File::create("stuff/songcache2.bin").unwrap();
-    writer::write_cache(songs, &mut f2, cloud_format);
+    writer::write_cache(songs, &mut f2);
+
+    /*let mut f = File::open("stuff/songcache2.bin").unwrap();
+    let songs = reader::read_cache(&mut f).unwrap();
+    let serialized = serde_json::to_string(&songs).unwrap();
+    let mut testout = File::create("stuff/debug.json").unwrap();
+    write!(testout, "{}", serialized).unwrap();*/
 }

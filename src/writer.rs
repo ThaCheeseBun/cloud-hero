@@ -5,19 +5,19 @@ use crate::songentry::SongEntry;
 use crate::VERSION;
 
 // .NET 7 bit integer writer
-fn write_7_bit_int(v: u8, f: &mut File) {
-    let mut val = v;
-    while val >= 0x80 {
-        f.write_u8((val | 0x80) & 0xff).unwrap();
-        val >>= 7;
+fn write_7_bit_int(value: i32, f: &mut File) {
+    let mut v = value as u32;
+    while v >= 0x80 {
+        f.write_u8((v | 0x80) as u8).unwrap();
+        v >>= 7;
     }
-    f.write_u8(val & 0x7f).unwrap();
+    f.write_u8(v as u8).unwrap();
 }
 
 // .NET length prefixed string writer
 fn write_string(v: String, f: &mut File) {
     let bytes = v.into_bytes();
-    write_7_bit_int(bytes.len() as u8, f);
+    write_7_bit_int(bytes.len() as i32, f);
     f.write(&bytes).unwrap();
 }
 
@@ -30,7 +30,7 @@ fn write_boolean(b: bool, f: &mut File) {
     }
 }
 
-pub fn write_cache(list: Vec<SongEntry>, f: &mut File, cloud_format: bool) {
+pub fn write_cache(list: Vec<SongEntry>, f: &mut File) {
     f.write_i32::<LittleEndian>(VERSION).unwrap();
 
     let mut checksum = Cursor::new(vec![0u8; list.len() * 16]);
@@ -58,7 +58,12 @@ pub fn write_cache(list: Vec<SongEntry>, f: &mut File, cloud_format: bool) {
     }
 
     f.write_i32::<LittleEndian>(list.len() as i32).unwrap();
+    
     for i in 0..list.len() {
+        if list[i].chart_name.clone().as_bytes().len() > 250 {
+            println!("yeh, {:?}", list[i].folder_path);
+        }
+        
         write_string(list[i].folder_path.clone(), f);
         f.write_i64::<LittleEndian>(0).unwrap();
         f.write_i64::<LittleEndian>(0).unwrap();
@@ -97,17 +102,5 @@ pub fn write_cache(list: Vec<SongEntry>, f: &mut File, cloud_format: bool) {
         write_string(list[i].top_level_playlist.clone(), f);
         write_string(list[i].sub_playlist.clone(), f);
         f.write(&list[i].checksum).unwrap();
-
-        // extended cloud format
-        if cloud_format {
-            f.write_i8(list[i].audio_files.len() as i8).unwrap();
-            for j in 0..list[i].audio_files.len() {
-                write_string(list[i].audio_files[j].clone(), f);
-            }
-            write_string(list[i].album_art_name.clone(), f);
-            write_boolean(list[i].image_background, f);
-            write_string(list[i].image_background_name.clone(), f);
-            write_string(list[i].video_background_name.clone(), f);
-        }
     }
 }

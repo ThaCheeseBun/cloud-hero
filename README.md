@@ -11,7 +11,8 @@ All files will be served statically from the webserver.
 * Ini parsing is handled slightly different. Double values will result in the last one being used.
 
 ## "Cloud Extended Format"
-Trying to find the correct audio files or the right album cover is quite fast on local file storage, but if the game needs to request the server for each one it's going to be real slow. Because of this Cloud Hero includes support for a extended format which includes some more info about the charts. It naturally not backwards compatible and only works with the Cloud Hero client (WIP).
+Trying to find the correct audio files or the right album cover is quite fast on local file storage, but if the game needs to request the server for each one it's going to be real slow. Because of this Cloud Hero includes support for a extended format which includes some more info about the charts. It's not backwards compatible and only works with the Cloud Hero client (WIP).\
+This hijacks the `chartName` field and adds all files in the directory separated by newline. I don't know if it's possible to have newline in file och directory names but it might cause problems if you do. There is also a limit of 256 since i don't expect you to have more.
 
 ## Todo
 * a lot

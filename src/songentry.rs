@@ -3,7 +3,6 @@ use serde::Serialize;
 const EMPTY_STRING: String = String::new();
 
 #[derive(Serialize, Debug)]
-#[allow(dead_code)]
 pub struct SongEntry {
 
     // normal format
@@ -27,13 +26,6 @@ pub struct SongEntry {
     pub sub_playlist: String,       // string
     pub top_level_playlist: String, // string
     pub video_background: bool,     // bool
-
-    // cloud extended format
-    pub album_art_name: String,
-    pub audio_files: Vec<String>,
-    pub image_background: bool,
-    pub image_background_name: String,
-    pub video_background_name: String,
 
     // unused stuff from internal script
     //containers: String,           // dict<string, GClass9> PRIVATE
@@ -69,12 +61,6 @@ impl SongEntry {
             sub_playlist: EMPTY_STRING,
             top_level_playlist: EMPTY_STRING,
             video_background: false,
-
-            album_art_name: EMPTY_STRING,
-            audio_files: vec![],
-            image_background: false,
-            image_background_name: EMPTY_STRING,
-            video_background_name: EMPTY_STRING,
         }
     }
 }

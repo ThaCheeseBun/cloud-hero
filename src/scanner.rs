@@ -5,13 +5,11 @@ use std::io::prelude::*;
 use std::{
     ffi::OsStr,
     fs,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf, MAIN_SEPARATOR},
 };
 use walkdir::WalkDir;
 
 const VIDEO_EXTS: [&str; 6] = ["mp4", "avi", "webm", "vp8", "ogv", "mpeg"];
-const IMAGE_EXTS: [&str; 3] = ["png", "jpg", "jpeg"];
-const AUDIO_EXTS: [&str; 4] = ["ogg", "mp3", "wav", "opus"];
 const METADATA_DEFAULTS: [&str; 7] = [
     "Unknown Name",
     "Unknown Artist",
@@ -21,8 +19,6 @@ const METADATA_DEFAULTS: [&str; 7] = [
     "Unknown Charter",
     "Unknown Playlist",
 ];
-const AUDIO_FILES: [&str; 14] = ["guitar", "bass", "rhythm", "vocals", "vocals_1", "vocals_2", "drums", "drums_1", "drums_2", "drums_3",
-"drums_4", "keys", "song", "crowd"];
 
 #[derive(Copy, Clone, PartialEq)]
 enum Instrument {
@@ -107,7 +103,7 @@ fn read_ini(song: &mut SongEntry, p: &PathBuf) -> bool {
                 "album_track" | "track" => song.album_track = val.parse::<i16>().unwrap_or(16000),
                 _ => {}
             }
-    
+
             // fix intensities
             song.intensities[3] = 0;
             if song.intensities[9] == -1 {
@@ -324,16 +320,12 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
             let mut ini_flag = false;
             let mut video_flag = false;
             let mut chart_name = String::new();
-
-            let mut album_art_name = String::new();
-            let mut audio_files = vec![];
-            let mut image_flag = false;
-            let mut image_name = String::new();
-            let mut video_name = String::new();
+            let mut files = vec![];
 
             // scan current folder
             for file in fs::read_dir(entry.path()).unwrap() {
                 let file = file.unwrap();
+                let raw_name = file.file_name().to_string_lossy().to_string();
                 let name = file
                     .path()
                     .file_stem()
@@ -346,28 +338,22 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
                     .unwrap_or(&OsStr::new(""))
                     .to_string_lossy()
                     .to_lowercase();
-                if name == "notes" {
+                if name == "notes" && (extension == "mid" || extension == "chart") {
+                    chart_name = raw_name.clone();
                     if extension == "mid" {
                         mid_flag = true;
-                        chart_name = file.file_name().to_string_lossy().to_string();
                     } else if extension == "chart" {
                         chart_flag = true;
-                        chart_name = file.file_name().to_string_lossy().to_string();
                     }
-                } else if name == "song" && extension == "ini" {
-                    ini_flag = true;
-                } else if name == "video" && VIDEO_EXTS.contains(&&extension[..]) {
-                    video_flag = true;
-                    video_name = file.file_name().to_string_lossy().to_string();
-                } else if IMAGE_EXTS.contains(&&extension[..]) {
-                    if name == "background" {
-                        image_flag = true;
-                        image_name = file.file_name().to_string_lossy().to_string();
-                    } else if name == "album" {
-                        album_art_name = file.file_name().to_string_lossy().to_string();
+                } else {
+                    if files.len() < 256 {
+                        files.push(raw_name.clone());
                     }
-                } else if AUDIO_FILES.contains(&&name[..]) && AUDIO_EXTS.contains(&&extension[..]) {
-                    audio_files.push(file.file_name().to_string_lossy().to_string());
+                    if name == "song" && extension == "ini" {
+                        ini_flag = true;
+                    } else if name == "video" && VIDEO_EXTS.contains(&&extension[..]) {
+                        video_flag = true;
+                    }
                 }
             }
 
@@ -377,7 +363,14 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
                 let mut song = SongEntry::default();
 
                 if cloud_format {
-                    song.folder_path = format!("/{}", s_path.strip_prefix(p).unwrap().to_string_lossy().replace('\\', "/"));
+                    song.folder_path = format!(
+                        "/{}",
+                        s_path
+                            .strip_prefix(p)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace(MAIN_SEPARATOR, "/")
+                    );
                 } else {
                     song.folder_path = s_path.to_string_lossy().to_lowercase().to_string();
                 }
@@ -418,11 +411,9 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
                 song.chart_name = chart_name;
                 song.date_added = 0; //DateTime.Now.Date;
                 if cloud_format {
-                    song.album_art_name = album_art_name;
-                    song.audio_files = audio_files;
-                    song.image_background = image_flag;
-                    song.image_background_name = image_name;
-                    song.video_background_name = video_name;
+                    for ff in files {
+                        song.chart_name += format!("\n{}", ff).as_str();
+                    }
                 }
 
                 // fix empty metadata
@@ -436,7 +427,7 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
                 if song.top_level_playlist == String::from("") {
                     // populate element
                     let mut tempdata = song.folder_path.clone();
-                    if tempdata.bytes().nth(tempdata.len() - 1).unwrap() == '\\' as u8 {
+                    if tempdata.bytes().nth(tempdata.len() - 1).unwrap() == MAIN_SEPARATOR as u8 {
                         tempdata.remove(tempdata.len() - 1);
                     }
                     tempdata =
@@ -444,7 +435,7 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
                     let mut num = -1;
                     if tempdata.len() > 0 {
                         tempdata.remove(0);
-                        num = tempdata.rfind("\\").unwrap_or(0) as i32;
+                        num = tempdata.rfind(MAIN_SEPARATOR).unwrap_or(0) as i32;
                     }
                     song.metadata[6] = {
                         if num == -1 {
@@ -455,20 +446,21 @@ pub fn scan_folder(p: &Path, cloud_format: bool) -> Vec<SongEntry> {
                     };
                     // create top_level_playlist
                     if song.metadata[6] != String::from("") {
-                        let temppos = song.metadata[6].find('\\');
+                        let temppos = song.metadata[6].find(MAIN_SEPARATOR);
                         song.top_level_playlist = {
                             if temppos.is_none() {
                                 song.metadata[6].clone()
                             } else {
                                 String::from(song.metadata[6].get(..temppos.unwrap()).unwrap())
                             }
-                        }.to_lowercase();
+                        }
+                        .to_lowercase();
                     }
                     song.sub_playlist = String::from("");
                 } else {
                     song.metadata[6] = format!("{}{}", song.top_level_playlist, {
                         if song.sub_playlist != String::from("") {
-                            format!("\\{}", song.sub_playlist)
+                            format!("{}{}", MAIN_SEPARATOR, song.sub_playlist)
                         } else {
                             String::from("")
                         }

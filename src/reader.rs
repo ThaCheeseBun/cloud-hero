@@ -1,23 +1,24 @@
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{prelude::*, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
 use crate::songentry::SongEntry;
 use crate::VERSION;
 
 // .NET 7 bit integer reader
-fn read_7_bit_int(f: &mut File) -> u8 {
-    let mut byte: u8;
+fn read_7_bit_int(f: &mut File) -> i32 {
+    let mut count = 0;
     let mut shift = 0;
-    let mut num = 0;
+    let mut b: u8;
     loop {
-        byte = f.read_u8().unwrap();
-        num |= (byte & 0x7f) << shift;
+        b = f.read_u8().unwrap();
+        count |= ((b & 0x7f) << shift) as i32;
         shift += 7;
-        if !((byte & 0x80) != 0) {
+        if !((b & 0x80) != 0) {
             break;
         }
     }
-    return num;
+    println!("{}", count);
+    return count;
 }
 
 // .NET length prefixed string reader
@@ -37,7 +38,7 @@ fn read_boolean(f: &mut File) -> bool {
     }
 }
 
-pub fn read_cache(f: &mut File, cloud_format: bool) -> Option<Vec<SongEntry>> {
+pub fn read_cache(f: &mut File) -> Option<Vec<SongEntry>> {
 
     // verify version
     let version = f.read_i32::<LittleEndian>().unwrap();
@@ -70,10 +71,14 @@ pub fn read_cache(f: &mut File, cloud_format: bool) -> Option<Vec<SongEntry>> {
         let text = read_string(f);
         let _ = f.read_i64::<LittleEndian>().unwrap();
         let _ = f.read_i64::<LittleEndian>().unwrap();
+
+        let testtemp = read_string(f);
+        println!("{:?}{:?}", testtemp, f.seek(SeekFrom::Current(0)).unwrap());
+
         let mut song_entry = SongEntry {
             folder_path: text,
 
-            chart_name: read_string(f),
+            chart_name: testtemp,
             is_enc: read_boolean(f),
             metadata: [
                 lists[0][f.read_i32::<LittleEndian>().unwrap() as usize].clone(),
@@ -116,27 +121,8 @@ pub fn read_cache(f: &mut File, cloud_format: bool) -> Option<Vec<SongEntry>> {
                 f.read_exact(&mut a).unwrap();
                 a
             },
-
-            // preset these first
-            audio_files: vec![],
-            album_art_name: String::new(),
-            image_background: false,
-            image_background_name: String::new(),
-            video_background_name: String::new(),
         };
-
-        // extended cloud format
-        if cloud_format {
-            let num = f.read_i8().unwrap();
-            for _ in 0..num {
-                song_entry.audio_files.push(read_string(f));
-            }
-            song_entry.album_art_name = read_string(f);
-            song_entry.image_background = read_boolean(f);
-            song_entry.image_background_name = read_string(f);
-            song_entry.video_background_name = read_string(f);
-        }
-
+        println!("{:?} {:?}", out.len(), song_entry.folder_path);
         out.push(song_entry);
     }
 
